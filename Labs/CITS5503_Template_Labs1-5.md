@@ -1405,71 +1405,221 @@ Create a directory `rootdir` \
 Create a file in `rootdir` called `rootfile.txt` and write some content in it `1\n2\n3\n4\n5\n` \
 Create a second directory in rootdir called `subdir`, and in the `subdir` directory create another file `subfile.txt` with the same content as `rootfile.txt`.
 
+```bash
+root in 🌐 awscli in ~ on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ wget https://raw.githubusercontent.com/zhangzhics/CITS5503_Sem2/refs/heads/master/Labs/src/cloudstorage.py
+--2025-08-06 07:46:54--  https://raw.githubusercontent.com/zhangzhics/CITS5503_Sem2/refs/heads/master/Labs/src/cloudstorage.py
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 185.199.108.133, 185.199.111.133, 185.199.110.133, ...
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|185.199.108.133|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 957 [text/plain]
+Saving to: 'cloudstorage.py'
+
+cloudstorage.py                                       100%[=========================================================================================================================>]     957  --.-KB/s    in 0s       
+
+2025-08-06 07:46:55 (64.5 MB/s) - 'cloudstorage.py' saved [957/957]
+
+root in 🌐 awscli in ~ via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ mkdir rootdir && cd rootdir && touch rootfile.txt && echo "1\n2\n3\n4\n5\n" > rootfile.txt \
+∙ && mkdir subdir && cd subdir && cp ../rootfile.txt ./subfile.txt
+
+root in 🌐 awscli in ~/rootdir/subdir on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ cat subfile.txt 
+1\n2\n3\n4\n5\n
+```
+
 ### [2] Save to S3 by updating `cloudstorage.py`
 
-Modify the downloaded Python script, `cloudstorage.py`, to create an S3 bucket named `<student ID>-cloudstorage`.
+Modify the `cloudstorage.py` script to save the contents of the `rootdir` directory to an S3 bucket.
 
-When the program traverses the directory starting at the root directory `rootdir`, upload each file onto the S3 bucket. An easy way to upload files is to use the command below:
+```python
+import os
+import boto3
+import base64
 
+# ------------------------------
+# CITS5503
+#
+# cloudstorage.py
+#
+# skeleton application to copy local files to S3
+#
+# Given a root local directory, will return files in each level and
+# copy to same path on S3
+#
+# ------------------------------ 
+
+
+ROOT_DIR = './rootdir'
+ROOT_S3_DIR = '24754678-cloudstorage'
+
+
+s3 = boto3.client("s3")
+
+bucket_config = {'LocationConstraint': 'eu-north-1'} #Replace the region with your allocated region name.
+
+def upload_file(folder_name: str, file: str, file_name: str):
+    print("Uploading %s" % file)
+
+    s3_key = folder_name + file_name
+
+    try:
+        # Upload the file to S3
+        s3.upload_file(file, ROOT_S3_DIR, s3_key)
+    except Exception as e:
+        print(f"Error uploading {file}: {e}")
+
+
+# Main program
+# Insert code to create bucket if not there
+
+try:
+    response = s3.create_bucket(
+        Bucket=ROOT_S3_DIR,
+        CreateBucketConfiguration=bucket_config
+    )
+    print(response)
+except Exception as error:
+    pass
+
+
+# parse directory and upload files
+# the original version only upload file in subdirectory. here we modify it to upload files in root directory as well
+for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
+    print(f"Processing directory: {dir_name}")
+    for fname in file_list:
+        if dir_name == ROOT_DIR:
+            # Files in root directory
+            upload_file("", "%s/%s" % (dir_name, fname), fname)
+        else:
+            # Files in subdirectories
+            upload_file("%s/" % dir_name[len(ROOT_DIR)+1:], "%s/%s" % (dir_name, fname), fname)
+
+
+print("done")
 ```
-s3.upload_file()
-```
 
-**NOTE**: Make sure your S3 bucket has the same file structure as shown in `[1] Preparation`.
+__Test the script:__
+```bash
+root in 🌐 awscli in ~/lab3 via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ python3 cloudstorage.py 
+Processing directory: ./rootdir
+Uploading ./rootdir/rootfile.txt
+Processing directory: ./rootdir/subdir
+Uploading ./rootdir/subdir/subfile.txt
+done
+
+root in 🌐 awscli in ~/lab3 via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ aws s3 ls s3://24754678-cloudstorage/
+                           PRE subdir/
+2025-08-06 11:09:23         16 rootfile.txt
+
+root in 🌐 awscli in ~/lab3 via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ aws s3 ls s3://24754678-cloudstorage/subdir/
+2025-08-06 11:09:23         16 subfile.txt
+```
 
 ### [3] Restore from S3
 
 Create a new program called `restorefromcloud.py` that reads the S3 bucket and writes the contents of the bucket within the appropriate directories. 
 
-**NOTE**: Your local Linux environment should see a copy of the files and the directories from the S3 bucket.
+```python
+import os
+import boto3
+
+ROOT_S3_DIR = '24754678-cloudstorage'
+RESTORE_DIR = './restored_files'
+
+s3 = boto3.client("s3")
+
+def restore_files_from_s3():
+    """Restore all files from S3 bucket to local directory"""
+    
+    # Create restore directory if it doesn't exist
+    if not os.path.exists(RESTORE_DIR):
+        os.makedirs(RESTORE_DIR)
+    
+    try:
+        # List all objects in the bucket
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR)
+        
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                s3_key = obj['Key']
+                local_file_path = os.path.join(RESTORE_DIR, s3_key)
+                
+                # Create directory structure if needed
+                local_dir = os.path.dirname(local_file_path)
+                if local_dir and not os.path.exists(local_dir):
+                    os.makedirs(local_dir)
+                
+                # Download the file
+                print(f"Downloading {s3_key} to {local_file_path}")
+                s3.download_file(ROOT_S3_DIR, s3_key, local_file_path)
+                
+            print(f"Successfully restored all files to {RESTORE_DIR}")
+        else:
+            print("No files found in the bucket")
+            
+    except Exception as e:
+        print(f"Error restoring files: {e}")
+
+if __name__ == "__main__":
+    restore_files_from_s3()
+    print("Restore complete")
+
+```
+
+> Here I move the whole project from home directory `~` to `~/lab3`. Since I execute the script in the `lab3` dir, it shouldn't be different.
+
+__Test the script:__
+```bash
+root in 🌐 awscli in ~/lab3 via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ python3 restorefromcloud.py 
+Downloading rootfile.txt to ./restored_files/rootfile.txt
+Downloading subdir/subfile.txt to ./restored_files/subdir/subfile.txt
+Successfully restored all files to ./restored_files
+Restore complete
+
+root in 🌐 awscli in ~/lab3 via 🐍 v3.10.12 on ☁️  (eu-north-1) took 2s 
+⬢ [Systemd] ❯ tree .
+.
+|-- cloudstorage.py
+|-- restored_files
+|   |-- rootfile.txt
+|   `-- subdir
+|       `-- subfile.txt
+|-- restorefromcloud.py
+`-- rootdir
+    |-- rootfile.txt
+    `-- subdir
+        `-- subfile.txt
+
+4 directories, 6 files
+
+```
 
 ### [4] Write information about files to DynamoDB
 
-Install DynamoDB on your Linux environment
+Use the following command to run a local DynamoDB instance using docker:
 
-```
-mkdir dynamodb
-cd dynamodb
-```
-
-Install jre if not done: 
-
-```
-sudo apt-get install default-jre
-wget https://s3-ap-northeast-1.amazonaws.com/dynamodb-local-tokyo/dynamodb_local_latest.tar.gz
-```
-
-You can use the following command to extract files from dynamodb_local_latest.tar.gz
-
-```
-tar -zxvf dynamodb_local_latest.tar.gz
-```
-
-After the extraction, run the command below
-
-```
-java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb
-```
-
-Alternatively, you can use docker:
 ```
 docker run -p 8000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb
 ```
-**Note**: Do not close the current window, open a new window to run the following Python script.
 
 Write a Python script to create a table called `CloudFiles` on your local DynamoDB and the attributes for the table are:
 
+```python
+    CloudFiles = {
+        'userId',
+        'fileName',
+        'path',
+        'lastUpdated',
+        'owner',
+        'permissions'
+    }
 ```
-        CloudFiles = {
-            'userId',
-            'fileName',
-            'path',
-            'lastUpdated',
-	    'owner',
-            'permissions'
-            }
-        )
-```
+
 `userId` is the partition key and `fileName` is the sort key. Regarding the creation, refer to this [page](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb.html)
 
 Then, you need to get the attributes above for each file of the S3 bucket and then write the attributes of each file into the created DynamoDB table. Regarding how to get the attributes for a file, refer to this [page](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/get_object_acl.html)
@@ -1487,14 +1637,299 @@ Then, you need to get the attributes above for each file of the S3 bucket and th
 | Asia Pacific (Singapore) | ap-southeast-1 |
 | Asia Pacific (Sydney)	| ap-southeast-2 |
 
+```python
+import boto3
+from botocore.exceptions import ClientError
+import os
+
+STUDENT_ID = "24754678"
+S3_BUCKET_NAME = f"{STUDENT_ID}-cloudstorage"
+TABLE_NAME = "CloudFiles"
+DYNAMODB_ENDPOINT = "http://localhost:8000"
+AWS_REGION = "ap-southeast-2"
+
+def create_cloudfiles_table():
+    """Create the CloudFiles table with required schema"""
+    
+    # Connect to local DynamoDB (no credentials needed for local)
+    dynamodb = boto3.resource('dynamodb', 
+                             endpoint_url=DYNAMODB_ENDPOINT,
+                             region_name=AWS_REGION)
+    
+    try:
+        table = dynamodb.create_table(
+            TableName=TABLE_NAME,
+            KeySchema=[
+                {'AttributeName': 'userId', 'KeyType': 'HASH'},      # Partition key
+                {'AttributeName': 'fileName', 'KeyType': 'RANGE'}    # Sort key
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+                {'AttributeName': 'fileName', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+        
+        table.wait_until_exists()
+        print(f"✓ Table '{TABLE_NAME}' created successfully!")
+        return table
+        
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            print(f"Table '{TABLE_NAME}' already exists")
+            return dynamodb.Table(TABLE_NAME)
+        else:
+            print(f"Error creating table: {e}")
+            return None
+
+def populate_table_from_s3():
+    """Get files from S3 bucket and populate DynamoDB table"""
+    
+    # Initialize clients (no credentials needed for local DynamoDB)
+    s3 = boto3.client('s3', region_name=AWS_REGION)
+    dynamodb = boto3.resource('dynamodb', 
+                             endpoint_url=DYNAMODB_ENDPOINT,
+                             region_name=AWS_REGION)
+    table = dynamodb.Table(TABLE_NAME)
+    
+    try:
+        response = s3.list_objects_v2(Bucket=S3_BUCKET_NAME)
+        
+        if 'Contents' not in response:
+            print(f"No files found in bucket {S3_BUCKET_NAME}")
+            return
+        
+        files = response['Contents']
+        print(f"Found {len(files)} files in S3 bucket")
+        
+        for file_obj in files:
+            file_key = file_obj['Key']
+            file_name = os.path.basename(file_key)
+            print(f"Processing: {file_key}")
+            
+            try:
+                # Get object ACL to extract owner and permissions
+                acl_response = s3.get_object_acl(Bucket=S3_BUCKET_NAME, Key=file_key)
+                
+                # Extract owner information
+                owner = acl_response['Owner']['ID']
+                
+                # Extract permissions from grants
+                permissions = acl_response['Grants']
+                
+                # Create item for DynamoDB
+                item = {
+                    'userId': STUDENT_ID,
+                    'fileName': file_name,
+                    'path': file_key,
+                    'lastUpdated': file_obj['LastModified'].isoformat(),
+                    'owner': owner,
+                    'permissions': permissions
+                }
+                
+                table.put_item(Item=item)
+                print(f"✓ Added {file_name} to DynamoDB table")
+                
+            except ClientError as acl_error:
+                print(f"Error: Could not get ACL for {file_key}: {acl_error}")
+                raise acl_error
+                
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        if error_code == 'NoSuchBucket':
+            print(f"Error: S3 bucket '{S3_BUCKET_NAME}' does not exist!")
+            print("Make sure to run cloudstorage.py first.")
+        else:
+            print(f"Error accessing S3: {e}")
+
+def main():
+    """Main execution function"""
+    print("CITS5503 Lab 3 - DynamoDB Operations")
+    print("=" * 40)
+    
+    # Step 1: Create DynamoDB table
+    print("1. Creating DynamoDB table...")
+    table = create_cloudfiles_table()
+    
+    if not table:
+        print("Failed to create table. Exiting.")
+        return
+    
+    # Step 2: Populate table with S3 file information
+    print("\n2. Populating DynamoDB table from S3 files...")
+    populate_table_from_s3()
+    
+    print("\n✅ Script completed!")
+
+if __name__ == "__main__":
+    main()
+
+```
+
+__Run the script:__
+```bash
+root in 🌐 awscli in ~ via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ /usr/bin/python3 /root/lab3/dynamodb.py
+CITS5503 Lab 3 - DynamoDB Operations
+========================================
+1. Creating DynamoDB table...
+✓ Table 'CloudFiles' created successfully!
+
+2. Populating DynamoDB table from S3 files...
+Found 2 files in S3 bucket
+Processing: rootfile.txt
+✓ Added rootfile.txt to DynamoDB table
+Processing: subdir/subfile.txt
+✓ Added subfile.txt to DynamoDB table
+
+✅ Script completed!
+```
+
 
 ### [5] Scan the table
 
-Use the AWS CLI command to scan the created DynamoDB table, and output what you've got. 
+Use the AWS CLI command to scan the created DynamoDB table, and output what you've got.
+
+```bash
+root in 🌐 awscli in ~ via 🐍 v3.10.12 on ☁️  (eu-north-1) took 2s 
+⬢ [Systemd] ❯ aws dynamodb scan --table-name CloudFiles --endpoint-url http://localhost:8000
+{
+    "Items": [
+        {
+            "owner": {
+                "S": "2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e"
+            },
+            "path": {
+                "S": "rootfile.txt"
+            },
+            "lastUpdated": {
+                "S": "2025-08-06T11:09:23+00:00"
+            },
+            "fileName": {
+                "S": "rootfile.txt"
+            },
+            "userId": {
+                "S": "24754678"
+            },
+            "permissions": {
+                "L": [
+                    {
+                        "M": {
+                            "Permission": {
+                                "S": "FULL_CONTROL"
+                            },
+                            "Grantee": {
+                                "M": {
+                                    "Type": {
+                                        "S": "CanonicalUser"
+                                    },
+                                    "ID": {
+                                        "S": "2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "owner": {
+                "S": "2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e"
+            },
+            "path": {
+                "S": "subdir/subfile.txt"
+            },
+            "lastUpdated": {
+                "S": "2025-08-06T11:09:23+00:00"
+            },
+            "fileName": {
+                "S": "subfile.txt"
+            },
+            "userId": {
+                "S": "24754678"
+            },
+            "permissions": {
+                "L": [
+                    {
+                        "M": {
+                            "Permission": {
+                                "S": "FULL_CONTROL"
+                            },
+                            "Grantee": {
+                                "M": {
+                                    "Type": {
+                                        "S": "CanonicalUser"
+                                    },
+                                    "ID": {
+                                        "S": "2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "Count": 2,
+    "ScannedCount": 2,
+    "ConsumedCapacity": null
+}
+
+```
 
 ### [6] Delete the table
 
 Use the AWS CLI command to delete the table.
+
+```
+root in 🌐 awscli in ~ via 🐍 v3.10.12 on ☁️  (eu-north-1) 
+⬢ [Systemd] ❯ aws dynamodb delete-table --table-name CloudFiles --endpoint-url http://localhost:8000
+{
+    "TableDescription": {
+        "AttributeDefinitions": [
+            {
+                "AttributeName": "userId",
+                "AttributeType": "S"
+            },
+            {
+                "AttributeName": "fileName",
+                "AttributeType": "S"
+            }
+        ],
+        "TableName": "CloudFiles",
+        "KeySchema": [
+            {
+                "AttributeName": "userId",
+                "KeyType": "HASH"
+            },
+            {
+                "AttributeName": "fileName",
+                "KeyType": "RANGE"
+            }
+        ],
+        "TableStatus": "ACTIVE",
+        "CreationDateTime": 1754485541.757,
+        "ProvisionedThroughput": {
+            "LastIncreaseDateTime": 0.0,
+            "LastDecreaseDateTime": 0.0,
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 589,
+        "ItemCount": 2,
+        "TableArn": "arn:aws:dynamodb:ddblocal:000000000000:table/CloudFiles",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1754485541.757
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+
+```
 
 **NOTE**: Delete the created S3 bucket(s) from AWS console after the lab is done.
 
