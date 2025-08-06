@@ -1,7 +1,7 @@
 # Practical Worksheet 2
 Version: 1.0 Date: 10/04/2018 Author: David Glance
 
-Date: 21/07/2025 Updated by Zhi Zhang and Jichunyang Li
+Date: 21/07/2025 Updated by Zhi Zhang, Jichunyang Li, Fudong Qin
 
 
 ## Learning Objectives
@@ -91,21 +91,26 @@ Use a Python script to implement the steps above (steps 1-6 are required, repeat
 
 ### Apple Silicon MacOS Users
 
-#### [1] Download Docker
+#### Install Docker
+Run the following command in your terminal to install Docker:
 
-Go to the official Docker website: [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop//), choose the version for your processor type (e.g., Apple Silicon), and download the `.dmg` file.
+```bash
+brew install --cask docker
+```
 
-#### [2] Start Docker
+If you have difficulty installing Docker with HomeBrew, you can install Docker manually.
 
-Open Docker from Applications.
+Go to the official Docker website: [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop//), choose the version for your processor type (e.g., Apple Silicon), and download the `.dmg` file. Then Open Docker from Applications.
 
-#### [3] Check the version
+#### Check the version
 
 Open the terminal and run the following command:
       
 ```bash
 docker --version
 ```
+
+You should see the Docker version information.
 
 ### Linux and WSL2 Users
 
